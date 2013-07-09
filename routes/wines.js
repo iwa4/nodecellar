@@ -336,6 +336,12 @@ var populateDB = function() {
       picture: "waterbrook.jpg"
     }];
 
+  Wine.remove(function(err) {
+    if (err) {
+      res.send({'error': 'An error has occurred - ' + err});
+    }
+  });
+
   Wine.create(wines, function(err) {
     if (err) {
       res.send({'error': 'An error has occurred - ' + err});
