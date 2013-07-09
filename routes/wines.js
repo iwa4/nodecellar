@@ -1,90 +1,117 @@
-var mongo = require('mongodb');
+"use strict";
 
-var Server = mongo.Server,
-        Db = mongo.Db,
-        BSON = mongo.BSONPure;
+var mongoose = require('mongoose');
 
-var server = new Server('localhost', 27017, {auto_reconnect: true});
-db = new Db('winedb', server, {safe: true});
+// Default Schemaを取得
+var Schema = mongoose.Schema;
 
-db.open(function(err, db) {
-  if (!err) {
-    console.log("Connected to 'winedb' database");
-    db.collection('wines', {safe: true}, function(err, collection) {
-      if (err) {
-        console.log("The 'wines' collection doesn't exist. Creating it with sample data...");
-        populateDB();
-      }
-    });
-  }
+// Defaultのスキーマから新しいスキーマを定義
+var WineSchema = new Schema({
+    name: String
+  , year: String
+  , grapes: String
+  , country: String
+  , region: String
+  , description: String
+  , picture: String
+  , date: Date
 });
+
+// ドキュメント保存時にフックして処理したいこと
+WineSchema.pre('save', function(next) {
+  this.date = new Date();
+  next();
+});
+
+// モデル化。model('[登録名]', '定義したスキーマクラス')
+mongoose.model('Wine', WineSchema);
+
+var Wine;
+
+// mongodb://[hostname]/[dbname]
+mongoose.connect('mongodb://localhost/winedb');
+
+// mongoDB接続時のエラーハンドリング
+var db = mongoose.connection;
+db.on('error', console.error.bind(console, 'connection error:'));
+db.once('open', function() {
+  console.log("Connected to 'winedb' database");
+  // 定義したときの登録名で呼び出し
+  Wine = mongoose.model('Wine');
+  populateDB();
+});
+
+exports.findAll = function(req, res) {
+  console.log('Getting winelist');
+
+  Wine.find({}, function(err, results) {
+    if (err) {
+      res.send({'error': 'An error has occurred'});
+    } else {
+      console.log('Success: Getting winelist');
+      res.json(results);
+    }
+  });
+};
 
 exports.findById = function(req, res) {
   var id = req.params.id;
   console.log('Retrieving wine: ' + id);
-  db.collection('wines', function(err, collection) {
-    collection.findOne({'_id': new BSON.ObjectID(id)}, function(err, item) {
-      res.send(item);
-    });
-  });
-};
 
-exports.findAll = function(req, res) {
-  db.collection('wines', function(err, collection) {
-    collection.find().toArray(function(err, items) {
-      res.send(items);
-    });
+  Wine.findById(id, function(err, result) {
+    if (err) {
+      res.send({'error': 'An error has occurred'});
+    } else {
+      console.log('Success: ' + JSON.stringify(result));
+      res.json(result);
+    }
   });
 };
 
 exports.addWine = function(req, res) {
   var wine = req.body;
   console.log('Adding wine: ' + JSON.stringify(wine));
-  db.collection('wines', function(err, collection) {
-    collection.insert(wine, {safe: true}, function(err, result) {
-      if (err) {
-        res.send({'error': 'An error has occurred'});
-      } else {
-        console.log('Success: ' + JSON.stringify(result[0]));
-        res.send(result[0]);
-      }
-    });
+
+  var addwine = new Wine(wine);
+  addwine.save(function(err, result) {
+    if (err) {
+      res.send({'error': 'An error has occurred'});
+    } else {
+      console.log('Success: ' + JSON.stringify(result));
+      res.json(result);
+    }
   });
-}
+};
 
 exports.updateWine = function(req, res) {
   var id = req.params.id;
+  console.log('Updating wine: ' + id);
+
   var wine = req.body;
   delete wine._id;
-  console.log('Updating wine: ' + id);
-  console.log(JSON.stringify(wine));
-  db.collection('wines', function(err, collection) {
-    collection.update({'_id': new BSON.ObjectID(id)}, wine, {safe: true}, function(err, result) {
-      if (err) {
-        console.log('Error updating wine: ' + err);
-        res.send({'error': 'An error has occurred'});
-      } else {
-        console.log('' + result + ' document(s) updated');
-        res.send(wine);
-      }
-    });
+  Wine.findByIdAndUpdate(id, wine, function(err, result) {
+    if (err) {
+      res.send({'error': 'An error has occurred - ' + err});
+    } else {
+      console.log('Success: ' + result + ' document(s) updated');
+      res.send(wine);
+    }
   });
-}
+};
 
 exports.deleteWine = function(req, res) {
   var id = req.params.id;
   console.log('Deleting wine: ' + id);
-  db.collection('wines', function(err, collection) {
-    collection.remove({'_id': new BSON.ObjectID(id)}, {safe: true}, function(err, result) {
-      if (err) {
-        res.send({'error': 'An error has occurred - ' + err});
-      } else {
-        console.log('' + result + ' document(s) deleted');
-        res.send(req.body);
-      }
-    });
+
+  Wine.findByIdAndRemove(id, function(err, result) {
+    if (err) {
+      res.send({'error': 'An error has occurred - ' + err});
+    } else {
+      console.log('Success: ' + result + ' document(s) deleted');
+      res.send(req.body);
+    }
   });
-}
+};
 
 /*--------------------------------------------------------------------------------------------------------------------*/
 // Populate database with sample data -- Only used once: the first time the application is started.
@@ -309,9 +336,9 @@ var populateDB = function() {
       picture: "waterbrook.jpg"
     }];
 
-  db.collection('wines', function(err, collection) {
-    collection.insert(wines, {safe: true}, function(err, result) {
-    });
+  Wine.create(wines, function(err) {
+    if (err) {
+      res.send({'error': 'An error has occurred - ' + err});
+    }
   });
-
 };
